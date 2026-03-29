@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NSE Futures Premium Dashboard</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f1117;
+      color: #e0e0e0;
+      min-height: 100vh;
+    }
+
+    header {
+      background: #1a1d2e;
+      border-bottom: 1px solid #2d3148;
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    header h1 {
+      font-size: 1.2rem;
+      font-weight: 600;
+      color: #fff;
+      letter-spacing: 0.3px;
+    }
+
+    header .subtitle {
+      font-size: 0.75rem;
+      color: #888;
+      margin-top: 2px;
+    }
+
+    .controls {
+      background: #14162a;
+      border-bottom: 1px solid #2d3148;
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+
+    .control-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .control-group label {
+      font-size: 0.78rem;
+      color: #aaa;
+      white-space: nowrap;
+    }
+
+    input[type="text"] {
+      background: #1e2038;
+      border: 1px solid #3d4165;
+      color: #e0e0e0;
+      padding: 6px 10px;
+      border-radius: 4px;
+      font-size: 0.82rem;
+      width: 200px;
+      outline: none;
+    }
+
+    input[type="text"]:focus {
+      border-color: #5a6aff;
+    }
+
+    select {
+      background: #1e2038;
+      border: 1px solid #3d4165;
+      color: #e0e0e0;
+      padding: 6px 10px;
+      border-radius: 4px;
+      font-size: 0.82rem;
+      outline: none;
+      cursor: pointer;
+    }
+
+    .checkbox-group {
+      display: flex;
+      gap: 12px;
+    }
+
+    .checkbox-group label {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      cursor: pointer;
+      font-size: 0.78rem;
+      color: #ccc;
+    }
+
+    .checkbox-group input[type="checkbox"] {
+      accent-color: #5a6aff;
+      cursor: pointer;
+    }
+
+    .stats {
+      margin-left: auto;
+      font-size: 0.75rem;
+      color: #666;
+    }
+
+    .table-container {
+      overflow: auto;
+      max-height: calc(100vh - 130px);
+    }
+
+    table {
+      border-collapse: collapse;
+      font-size: 0.78rem;
+      white-space: nowrap;
+      width: max-content;
+      min-width: 100%;
+    }
+
+    thead th {
+      background: #1a1d2e;
+      color: #aaa;
+      font-weight: 500;
+      padding: 8px 10px;
+      text-align: right;
+      border-bottom: 2px solid #2d3148;
+      border-right: 1px solid #252840;
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    thead th:first-child {
+      text-align: left;
+      position: sticky;
+      left: 0;
+      z-index: 3;
+      background: #1a1d2e;
+    }
+
+    thead th:hover {
+      background: #252840;
+      color: #fff;
+    }
+
+    thead th .sort-arrow {
+      display: inline-block;
+      margin-left: 4px;
+      opacity: 0.4;
+      font-size: 0.65rem;
+    }
+
+    thead th.sorted-asc .sort-arrow::after { content: '▲'; opacity: 1; }
+    thead th.sorted-desc .sort-arrow::after { content: '▼'; opacity: 1; }
+    thead th:not(.sorted-asc):not(.sorted-desc) .sort-arrow::after { content: '⇅'; }
+
+    /* Date group headers */
+    thead tr.date-header th {
+      background: #12152a;
+      color: #7080cc;
+      font-size: 0.72rem;
+      padding: 4px 10px;
+      border-bottom: 1px solid #2d3148;
+      cursor: default;
+    }
+
+    thead tr.date-header th:first-child {
+      position: sticky;
+      left: 0;
+      z-index: 3;
+      background: #12152a;
+    }
+
+    tbody tr {
+      border-bottom: 1px solid #1e2038;
+    }
+
+    tbody tr:hover td {
+      background: #1e2240 !important;
+    }
+
+    tbody td {
+      padding: 6px 10px;
+      text-align: right;
+      border-right: 1px solid #1e2038;
+      color: #d0d0d0;
+    }
+
+    tbody td:first-child {
+      text-align: left;
+      font-weight: 600;
+      color: #e8eaff;
+      position: sticky;
+      left: 0;
+      background: #0f1117;
+      z-index: 1;
+      min-width: 110px;
+    }
+
+    tbody tr:nth-child(even) td:first-child {
+      background: #111320;
+    }
+
+    tbody tr:nth-child(even) td {
+      background: #111320;
+    }
+
+    /* Color coding for premium columns */
+    td.pos { color: #4caf82 !important; }
+    td.neg { color: #e05a5a !important; }
+    td.pos-strong { background: rgba(76, 175, 130, 0.12) !important; color: #5dd89a !important; }
+    td.neg-strong { background: rgba(224, 90, 90, 0.12) !important; color: #f07070 !important; }
+
+    td.col-price { color: #b0b8ff; }
+    td.col-separator { border-right: 2px solid #2d3148 !important; }
+
+    #loading {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 60vh;
+      gap: 16px;
+      color: #666;
+    }
+
+    .spinner {
+      width: 36px;
+      height: 36px;
+      border: 3px solid #2d3148;
+      border-top-color: #5a6aff;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    footer {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: #14162a;
+      border-top: 1px solid #2d3148;
+      padding: 6px 24px;
+      font-size: 0.72rem;
+      color: #555;
+      display: flex;
+      justify-content: space-between;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>NSE Futures Premium Dashboard</h1>
+    <div class="subtitle" id="last-updated">Loading...</div>
+  </div>
+</header>
+
+<div class="controls">
+  <div class="control-group">
+    <label>Search</label>
+    <input type="text" id="search" placeholder="Filter by symbol..." oninput="renderTable()">
+  </div>
+
+  <div class="control-group">
+    <label>Show days</label>
+    <select id="num-days" onchange="renderTable()">
+      <option value="5">5 days</option>
+      <option value="10" selected>10 days</option>
+      <option value="20">20 days</option>
+      <option value="50">50 days</option>
+      <option value="0">All</option>
+    </select>
+  </div>
+
+  <div class="control-group">
+    <label>Columns</label>
+    <div class="checkbox-group">
+      <label><input type="checkbox" id="show-price" checked onchange="renderTable()"> Current Px</label>
+      <label><input type="checkbox" id="show-next" checked onchange="renderTable()"> Next %</label>
+      <label><input type="checkbox" id="show-far" checked onchange="renderTable()"> Far %</label>
+    </div>
+  </div>
+
+  <div class="stats" id="stats"></div>
+</div>
+
+<div id="loading">
+  <div class="spinner"></div>
+  <div>Loading FUTURES_PREMIUM_DB.csv...</div>
+</div>
+
+<div class="table-container" id="table-wrap" style="display:none">
+  <table id="main-table">
+    <thead id="thead"></thead>
+    <tbody id="tbody"></tbody>
+  </table>
+</div>
+
+<footer>
+  <span>Data source: NSE India &mdash; Futures Premium Database</span>
+  <span id="footer-info"></span>
+</footer>
+
+<script>
+  let allRows = [];
+  let allDates = [];
+  let sortCol = null;
+  let sortDir = 1; // 1 = asc, -1 = desc
+
+  // Format date YYYYMMDD → DD-MMM-YY
+  function fmtDate(d) {
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const y = d.slice(0,4), m = parseInt(d.slice(4,6))-1, day = d.slice(6,8);
+    return `${day}-${months[m]}-${y.slice(2)}`;
+  }
+
+  Papa.parse('FUTURES_PREMIUM_DB.csv', {
+    download: true,
+    header: true,
+    skipEmptyLines: true,
+    complete: function(results) {
+      const headers = results.meta.fields;
+
+      // Parse columns into date groups
+      const dateSet = new Set();
+      headers.forEach(h => {
+        if (h === 'TckrSymb') return;
+        const parts = h.split('_');
+        if (parts.length >= 2) dateSet.add(parts[0]);
+      });
+
+      // Sort dates descending (newest first)
+      allDates = Array.from(dateSet).sort((a, b) => b.localeCompare(a));
+      allRows = results.data;
+
+      // Update header info
+      const latestDate = allDates[0] ? fmtDate(allDates[0]) : 'N/A';
+      document.getElementById('last-updated').textContent =
+        `${allDates.length} trading days | Latest: ${latestDate} | ${allRows.length} symbols`;
+      document.getElementById('footer-info').textContent =
+        `${allRows.length} symbols × ${allDates.length} dates`;
+
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('table-wrap').style.display = 'block';
+
+      renderTable();
+    },
+    error: function(err) {
+      document.getElementById('loading').innerHTML =
+        `<div style="color:#e05a5a">Failed to load CSV: ${err.message}</div>`;
+    }
+  });
+
+  function getActiveDates() {
+    const n = parseInt(document.getElementById('num-days').value);
+    return n === 0 ? allDates : allDates.slice(0, n);
+  }
+
+  function getActiveTypes() {
+    return {
+      price: document.getElementById('show-price').checked,
+      next: document.getElementById('show-next').checked,
+      far: document.getElementById('show-far').checked
+    };
+  }
+
+  function getFilteredRows() {
+    const q = document.getElementById('search').value.trim().toUpperCase();
+    if (!q) return allRows;
+    return allRows.filter(r => r.TckrSymb && r.TckrSymb.toUpperCase().includes(q));
+  }
+
+  function colorClass(val, isPrice) {
+    if (isPrice) return 'col-price';
+    const v = parseFloat(val);
+    if (isNaN(v)) return '';
+    if (v >= 1.0) return 'pos-strong';
+    if (v > 0) return 'pos';
+    if (v <= -1.0) return 'neg-strong';
+    if (v < 0) return 'neg';
+    return '';
+  }
+
+  function renderTable() {
+    const dates = getActiveDates();
+    const types = getActiveTypes();
+    const rows = getFilteredRows();
+
+    // Build column definitions
+    const cols = []; // {date, type, key, label, isPrice, isLast}
+    dates.forEach((date, di) => {
+      const dateLabel = fmtDate(date);
+      if (types.price) cols.push({ date, type: 'current_px', key: `${date}_current_px`, label: 'Px', dateLabel, isPrice: true, isLast: !types.next && !types.far });
+      if (types.next)  cols.push({ date, type: 'next_current', key: `${date}_next_current`, label: 'Next%', dateLabel, isPrice: false, isLast: !types.far });
+      if (types.far)   cols.push({ date, type: 'far_next', key: `${date}_far_next`, label: 'Far%', dateLabel, isPrice: false, isLast: true });
+    });
+
+    // Sort rows
+    let sorted = [...rows];
+    if (sortCol === null) {
+      sorted.sort((a, b) => (a.TckrSymb || '').localeCompare(b.TckrSymb || ''));
+    } else if (sortCol === 'TckrSymb') {
+      sorted.sort((a, b) => sortDir * (a.TckrSymb || '').localeCompare(b.TckrSymb || ''));
+    } else {
+      sorted.sort((a, b) => {
+        const av = parseFloat(a[sortCol]) || 0;
+        const bv = parseFloat(b[sortCol]) || 0;
+        return sortDir * (av - bv);
+      });
+    }
+
+    // Build thead: 2 rows (date group + col type)
+    const thead = document.getElementById('thead');
+
+    // Row 1: date groups
+    let r1 = '<tr class="date-header"><th></th>';
+    let colIdx = 0;
+    dates.forEach(date => {
+      const span = (types.price ? 1 : 0) + (types.next ? 1 : 0) + (types.far ? 1 : 0);
+      if (span === 0) return;
+      r1 += `<th colspan="${span}">${fmtDate(date)}</th>`;
+    });
+    r1 += '</tr>';
+
+    // Row 2: column headers
+    let r2 = '<tr>';
+    const symClass = sortCol === 'TckrSymb' ? (sortDir === 1 ? 'sorted-asc' : 'sorted-desc') : '';
+    r2 += `<th class="${symClass}" onclick="onSort('TckrSymb')">Symbol<span class="sort-arrow"></span></th>`;
+    cols.forEach((c, i) => {
+      const isLastInGroup = c.isLast;
+      const extraClass = isLastInGroup ? 'col-separator' : '';
+      const sorted = sortCol === c.key ? (sortDir === 1 ? 'sorted-asc' : 'sorted-desc') : '';
+      r2 += `<th class="${sorted} ${extraClass}" onclick="onSort('${c.key}')">${c.label}<span class="sort-arrow"></span></th>`;
+    });
+    r2 += '</tr>';
+
+    thead.innerHTML = r1 + r2;
+
+    // Build tbody
+    const frag = document.createDocumentFragment();
+    sorted.forEach(row => {
+      const tr = document.createElement('tr');
+      let html = `<td>${row.TckrSymb || ''}</td>`;
+      cols.forEach((c, i) => {
+        const val = row[c.key];
+        const display = val !== undefined && val !== '' ? parseFloat(val).toFixed(c.isPrice ? 1 : 2) : '-';
+        const cc = colorClass(val, c.isPrice);
+        const extraClass = c.isLast ? 'col-separator' : '';
+        html += `<td class="${cc} ${extraClass}">${display}</td>`;
+      });
+      tr.innerHTML = html;
+      frag.appendChild(tr);
+    });
+
+    const tbody = document.getElementById('tbody');
+    tbody.innerHTML = '';
+    tbody.appendChild(frag);
+
+    document.getElementById('stats').textContent =
+      `${sorted.length} symbols · ${dates.length} days · ${cols.length} columns`;
+  }
+
+  function onSort(key) {
+    if (sortCol === key) {
+      sortDir = -sortDir;
+    } else {
+      sortCol = key;
+      sortDir = key === 'TckrSymb' ? 1 : -1; // default: desc for numbers, asc for text
+    }
+    renderTable();
+  }
+</script>
+
+</body>
+</html>
