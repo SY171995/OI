@@ -256,6 +256,76 @@
       display: flex;
       justify-content: space-between;
     }
+
+    #refresh-btn {
+      background: transparent;
+      border: 1px solid #3d4165;
+      color: #aaa;
+      padding: 6px 14px;
+      border-radius: 4px;
+      font-size: 0.82rem;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+    }
+
+    #refresh-btn:hover:not(:disabled) {
+      border-color: #5a6aff;
+      color: #fff;
+    }
+
+    #refresh-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    #refresh-log {
+      position: fixed;
+      bottom: 32px;
+      right: 16px;
+      width: 480px;
+      max-height: 320px;
+      background: #0d0f1c;
+      border: 1px solid #2d3148;
+      border-radius: 6px;
+      overflow-y: auto;
+      font-family: 'Courier New', monospace;
+      font-size: 0.72rem;
+      color: #aaa;
+      z-index: 100;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+    }
+
+    #refresh-log-header {
+      background: #1a1d2e;
+      padding: 6px 12px;
+      font-size: 0.72rem;
+      color: #666;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #2d3148;
+      position: sticky;
+      top: 0;
+    }
+
+    #refresh-log-close {
+      cursor: pointer;
+      color: #555;
+      font-size: 1rem;
+      line-height: 1;
+    }
+
+    #refresh-log-close:hover { color: #aaa; }
+
+    #refresh-log-lines {
+      padding: 8px 12px;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    #refresh-log-lines .log-done { color: #4caf82; font-weight: bold; }
+    #refresh-log-lines .log-error { color: #e05a5a; font-weight: bold; }
+    #refresh-log-lines .log-section { color: #5a6aff; }
   </style>
 </head>
 <body>
@@ -265,7 +335,16 @@
     <h1>NSE Futures Premium Dashboard</h1>
     <div class="subtitle" id="last-updated">Loading...</div>
   </div>
+  <button id="refresh-btn" onclick="doRefresh()">&#x21BB; Refresh</button>
 </header>
+
+<div id="refresh-log" style="display:none">
+  <div id="refresh-log-header">
+    <span>Refresh Log</span>
+    <span id="refresh-log-close" onclick="document.getElementById('refresh-log').style.display='none'">&#x2715;</span>
+  </div>
+  <div id="refresh-log-lines"></div>
+</div>
 
 <div class="controls">
   <div class="control-group">
@@ -326,42 +405,105 @@
     return `${day}-${months[m]}-${y.slice(2)}`;
   }
 
-  Papa.parse('FUTURES_PREMIUM_DB.csv', {
-    download: true,
-    header: true,
-    skipEmptyLines: true,
-    complete: function(results) {
-      const headers = results.meta.fields;
+  function loadCSV(cacheBust) {
+    const url = 'FUTURES_PREMIUM_DB.csv' + (cacheBust ? '?t=' + Date.now() : '');
+    document.getElementById('loading').style.display = 'flex';
+    document.getElementById('table-wrap').style.display = 'none';
+    Papa.parse(url, {
+      download: true,
+      header: true,
+      skipEmptyLines: true,
+      complete: function(results) {
+        const headers = results.meta.fields;
 
-      // Parse columns into date groups
-      const dateSet = new Set();
-      headers.forEach(h => {
-        if (h === 'TckrSymb') return;
-        const parts = h.split('_');
-        if (parts.length >= 2) dateSet.add(parts[0]);
-      });
+        // Parse columns into date groups
+        const dateSet = new Set();
+        headers.forEach(h => {
+          if (h === 'TckrSymb') return;
+          const parts = h.split('_');
+          if (parts.length >= 2) dateSet.add(parts[0]);
+        });
 
-      // Sort dates descending (newest first)
-      allDates = Array.from(dateSet).sort((a, b) => b.localeCompare(a));
-      allRows = results.data;
+        // Sort dates descending (newest first)
+        allDates = Array.from(dateSet).sort((a, b) => b.localeCompare(a));
+        allRows = results.data;
 
-      // Update header info
-      const latestDate = allDates[0] ? fmtDate(allDates[0]) : 'N/A';
-      document.getElementById('last-updated').textContent =
-        `${allDates.length} trading days | Latest: ${latestDate} | ${allRows.length} symbols`;
-      document.getElementById('footer-info').textContent =
-        `${allRows.length} symbols × ${allDates.length} dates`;
+        // Update header info
+        const latestDate = allDates[0] ? fmtDate(allDates[0]) : 'N/A';
+        document.getElementById('last-updated').textContent =
+          `${allDates.length} trading days | Latest: ${latestDate} | ${allRows.length} symbols`;
+        document.getElementById('footer-info').textContent =
+          `${allRows.length} symbols × ${allDates.length} dates`;
 
-      document.getElementById('loading').style.display = 'none';
-      document.getElementById('table-wrap').style.display = 'block';
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('table-wrap').style.display = 'block';
 
-      renderTable();
-    },
-    error: function(err) {
-      document.getElementById('loading').innerHTML =
-        `<div style="color:#e05a5a">Failed to load CSV: ${err.message}</div>`;
+        renderTable();
+      },
+      error: function(err) {
+        document.getElementById('loading').innerHTML =
+          `<div style="color:#e05a5a">Failed to load CSV: ${err.message}</div>`;
+      }
+    });
+  }
+
+  loadCSV(false);
+
+  async function doRefresh() {
+    const btn = document.getElementById('refresh-btn');
+    const log = document.getElementById('refresh-log');
+    const lines = document.getElementById('refresh-log-lines');
+
+    btn.disabled = true;
+    btn.textContent = '↻ Refreshing...';
+    log.style.display = 'block';
+    lines.innerHTML = '';
+
+    function appendLine(text, cls) {
+      const el = document.createElement('div');
+      if (cls) el.className = cls;
+      el.textContent = text;
+      lines.appendChild(el);
+      lines.scrollTop = lines.scrollHeight;
     }
-  });
+
+    try {
+      const resp = await fetch('/api/refresh', { method: 'POST' });
+      if (!resp.ok) { throw new Error('Server error ' + resp.status); }
+
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const parts = buf.split('\n\n');
+        buf = parts.pop();
+        for (const part of parts) {
+          const line = part.trim();
+          if (!line.startsWith('data: ')) continue;
+          const msg = line.slice(6);
+          if (msg === 'DONE') {
+            appendLine('Done! Reloading data...', 'log-done');
+            loadCSV(true);
+          } else if (msg.startsWith('ERROR')) {
+            appendLine(msg, 'log-error');
+          } else if (msg.startsWith('===')) {
+            appendLine(msg, 'log-section');
+          } else {
+            appendLine(msg);
+          }
+        }
+      }
+    } catch (err) {
+      appendLine('Error: ' + err.message, 'log-error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '↻ Refresh';
+    }
+  }
 
   function getActiveDates() {
     const n = parseInt(document.getElementById('num-days').value);

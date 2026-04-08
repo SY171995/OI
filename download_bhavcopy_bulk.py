@@ -2,12 +2,17 @@ import os
 import sys
 import time
 import random
+import argparse
 from datetime import datetime, timedelta
 from bhavcopy import download_nse_data
 
 # --- Configuration ---
-START_DATE  = datetime(2025, 3, 22)   # 1 year ago
-END_DATE    = datetime(2026, 3, 22)   # today
+parser = argparse.ArgumentParser(description='Download NSE BhavCopy data')
+parser.add_argument('--days', type=int, default=7, help='Download last N trading days (default: 7)')
+args, _ = parser.parse_known_args()
+
+END_DATE    = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+START_DATE  = END_DATE - timedelta(days=args.days * 2)  # ×2 to account for weekends/holidays
 OUTPUT_PATH = "./bhavcopy_data"       # directory to save downloaded CSVs
 # ---------------------
 
