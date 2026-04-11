@@ -326,14 +326,144 @@
     #refresh-log-lines .log-done { color: #4caf82; font-weight: bold; }
     #refresh-log-lines .log-error { color: #e05a5a; font-weight: bold; }
     #refresh-log-lines .log-section { color: #5a6aff; }
+
+    /* Tab navigation */
+    .tab-nav {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+    }
+
+    .tab-btn {
+      background: transparent;
+      border: 1px solid transparent;
+      color: #666;
+      padding: 5px 14px;
+      border-radius: 4px;
+      font-size: 0.82rem;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+
+    .tab-btn:hover { color: #ccc; }
+
+    .tab-btn.active {
+      border-color: #5a6aff;
+      color: #a0aaff;
+      background: rgba(90, 106, 255, 0.08);
+    }
+
+    /* BTST panel */
+    #btst-panel {
+      display: none;
+      padding: 20px 24px;
+    }
+
+    #btst-panel.active { display: block; }
+
+    .btst-controls {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+
+    .btst-controls label {
+      font-size: 0.82rem;
+      color: #aaa;
+    }
+
+    #btst-date-select {
+      background: #1e2038;
+      border: 1px solid #3d4165;
+      color: #e0e0e0;
+      padding: 7px 14px;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      outline: none;
+      cursor: pointer;
+      min-width: 160px;
+    }
+
+    .btst-subtitle {
+      font-size: 0.75rem;
+      color: #555;
+      margin-left: auto;
+    }
+
+    #btst-table-wrap table {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 0.82rem;
+    }
+
+    #btst-table-wrap th {
+      background: #1a1d2e;
+      color: #aaa;
+      font-weight: 500;
+      padding: 9px 12px;
+      text-align: right;
+      border-bottom: 2px solid #2d3148;
+      white-space: nowrap;
+    }
+
+    #btst-table-wrap th:first-child,
+    #btst-table-wrap th:nth-child(2) { text-align: left; }
+
+    #btst-table-wrap td {
+      padding: 10px 12px;
+      text-align: right;
+      border-bottom: 1px solid #1e2038;
+      color: #d0d0d0;
+    }
+
+    #btst-table-wrap td:first-child,
+    #btst-table-wrap td:nth-child(2) {
+      text-align: left;
+    }
+
+    #btst-table-wrap td:first-child {
+      color: #555;
+      font-size: 0.75rem;
+      width: 36px;
+    }
+
+    #btst-table-wrap td:nth-child(2) {
+      font-weight: 700;
+      color: #e8eaff;
+      font-size: 0.88rem;
+    }
+
+    #btst-table-wrap tr:hover td { background: #1e2240; }
+
+    .btst-score {
+      display: inline-block;
+      background: rgba(90, 106, 255, 0.15);
+      color: #a0aaff;
+      border-radius: 3px;
+      padding: 2px 7px;
+      font-weight: 600;
+    }
+
+    #btst-loading {
+      padding: 40px;
+      text-align: center;
+      color: #555;
+      font-size: 0.85rem;
+    }
   </style>
 </head>
 <body>
 
 <header>
   <div>
-    <h1>NSE Futures Premium Dashboard</h1>
+    <h1>NSE Futures Dashboard</h1>
     <div class="subtitle" id="last-updated">Loading...</div>
+  </div>
+  <div class="tab-nav">
+    <button class="tab-btn active" id="tab-premium" onclick="switchTab('premium')">Futures Premium</button>
+    <button class="tab-btn" id="tab-btst" onclick="switchTab('btst')">BTST Picks</button>
   </div>
   <button id="refresh-btn" onclick="doRefresh()">&#x21BB; Refresh</button>
 </header>
@@ -375,16 +505,31 @@
   <div class="stats" id="stats"></div>
 </div>
 
-<div id="loading">
-  <div class="spinner"></div>
-  <div>Loading FUTURES_PREMIUM_DB.csv...</div>
+<!-- Futures Premium panel -->
+<div id="premium-panel">
+  <div id="loading">
+    <div class="spinner"></div>
+    <div>Loading FUTURES_PREMIUM_DB.csv...</div>
+  </div>
+
+  <div class="table-container" id="table-wrap" style="display:none">
+    <table id="main-table">
+      <thead id="thead"></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
 </div>
 
-<div class="table-container" id="table-wrap" style="display:none">
-  <table id="main-table">
-    <thead id="thead"></thead>
-    <tbody id="tbody"></tbody>
-  </table>
+<!-- BTST panel -->
+<div id="btst-panel">
+  <div class="btst-controls">
+    <label>Date</label>
+    <select id="btst-date-select" onchange="loadBtstDate(this.value)"></select>
+    <span class="btst-subtitle" id="btst-subtitle"></span>
+  </div>
+  <div id="btst-table-wrap">
+    <div id="btst-loading">Select a date to load BTST picks</div>
+  </div>
 </div>
 
 <footer>
@@ -622,6 +767,105 @@
       sortDir = key === 'TckrSymb' ? 1 : -1; // default: desc for numbers, asc for text
     }
     renderTable();
+  }
+
+  // ── Tab switching ──────────────────────────────────────────────────────────
+  function switchTab(tab) {
+    document.getElementById('tab-premium').classList.toggle('active', tab === 'premium');
+    document.getElementById('tab-btst').classList.toggle('active', tab === 'btst');
+    document.getElementById('premium-panel').style.display = tab === 'premium' ? '' : 'none';
+    document.getElementById('btst-panel').classList.toggle('active', tab === 'btst');
+    document.querySelector('.controls').style.display = tab === 'premium' ? '' : 'none';
+
+    if (tab === 'btst' && document.getElementById('btst-date-select').options.length === 0) {
+      loadBtstDates();
+    }
+  }
+
+  // ── BTST ───────────────────────────────────────────────────────────────────
+  let btstData = null;  // cache for BTST_PICKS_ALL.json
+
+  function fmtDateDisplay(d) {
+    // YYYYMMDD → DD-MMM-YYYY
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const y = d.slice(0,4), mo = parseInt(d.slice(4,6))-1, day = d.slice(6,8);
+    return `${day}-${months[mo]}-${y}`;
+  }
+
+  async function loadBtstDates() {
+    document.getElementById('btst-loading').textContent = 'Loading...';
+    try {
+      const resp = await fetch('BTST_PICKS_ALL.json?t=' + Date.now());
+      if (!resp.ok) throw new Error('BTST_PICKS_ALL.json not found');
+      btstData = await resp.json();
+      const dates = (btstData.dates || []).slice(0, 7);
+      const sel = document.getElementById('btst-date-select');
+      sel.innerHTML = '';
+      dates.forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = d;
+        opt.textContent = fmtDateDisplay(d);
+        sel.appendChild(opt);
+      });
+      if (dates.length > 0) loadBtstDate(dates[0]);
+    } catch (e) {
+      document.getElementById('btst-loading').textContent = 'Failed to load BTST data: ' + e.message;
+    }
+  }
+
+  function loadBtstDate(date) {
+    const wrap = document.getElementById('btst-table-wrap');
+    if (!btstData || !btstData.picks[date]) {
+      wrap.innerHTML = `<div id="btst-loading">No data for ${date}</div>`;
+      return;
+    }
+    renderBtstTable(btstData.picks[date], date);
+  }
+
+  function colorVal(v, decimals=2) {
+    const n = parseFloat(v);
+    if (isNaN(n)) return '<span style="color:#444">—</span>';
+    const cls = n > 0 ? 'pos' : n < 0 ? 'neg' : '';
+    const sign = n > 0 ? '+' : '';
+    return `<span class="${cls}">${sign}${n.toFixed(decimals)}</span>`;
+  }
+
+  function renderBtstTable(picks, date) {
+    const wrap = document.getElementById('btst-table-wrap');
+    document.getElementById('btst-subtitle').textContent =
+      `${picks.length} picks · Score = 40% price + 40% volume + 20% OI`;
+
+    let html = `<table>
+      <thead><tr>
+        <th>#</th>
+        <th>Symbol</th>
+        <th>Score</th>
+        <th>Price Chg%</th>
+        <th>Close</th>
+        <th>Spot</th>
+        <th>Fut Prem%</th>
+        <th>Turnover (Cr)</th>
+        <th>OI Chg%</th>
+        <th>Expiry</th>
+      </tr></thead><tbody>`;
+
+    picks.forEach(r => {
+      html += `<tr>
+        <td>${r.rank}</td>
+        <td>${r.TckrSymb}</td>
+        <td><span class="btst-score">${parseFloat(r.score).toFixed(1)}</span></td>
+        <td>${colorVal(r.price_chg_pct)}</td>
+        <td style="color:#b0b8ff">${parseFloat(r.ClsPric).toFixed(2)}</td>
+        <td style="color:#888">${parseFloat(r.UndrlygPric).toFixed(2)}</td>
+        <td>${colorVal(r.futures_premium_pct)}</td>
+        <td>${parseFloat(r.turnover_cr).toFixed(2)}</td>
+        <td>${colorVal(r.oi_change_pct)}</td>
+        <td style="color:#666;font-size:0.75rem">${r.XpryDt}</td>
+      </tr>`;
+    });
+
+    html += '</tbody></table>';
+    wrap.innerHTML = html;
   }
 </script>
 
