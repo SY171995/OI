@@ -383,7 +383,13 @@
       text-align: left;
       border-bottom: 2px solid #2d3148;
       white-space: nowrap;
+      user-select: none;
     }
+
+    #scanner-table-wrap th:hover { background: #252840; color: #fff; }
+    #scanner-table-wrap th.sorted-asc  .sort-arrow::after { content: '▲'; opacity: 1; }
+    #scanner-table-wrap th.sorted-desc .sort-arrow::after { content: '▼'; opacity: 1; }
+    #scanner-table-wrap th:not(.sorted-asc):not(.sorted-desc) .sort-arrow::after { content: '⇅'; opacity: 0.4; }
 
     #scanner-table-wrap th:nth-child(3) { text-align: right; }
 
@@ -1004,7 +1010,10 @@
   }
 
   // ── Scanner ────────────────────────────────────────────────────────────────
-  let scannerData = null;
+  let scannerData    = null;
+  let scannerDate    = null;
+  let scannerSortCol = 'mcap';
+  let scannerSortDir = -1;  // default: mcap descending
 
   async function loadScannerDates() {
     document.getElementById('scanner-loading').textContent = 'Loading...';
@@ -1028,18 +1037,51 @@
   }
 
   function loadScannerDate(date) {
+    scannerDate = date;
+    renderScannerTable();
+  }
+
+  function onScannerSort(col) {
+    if (scannerSortCol === col) {
+      scannerSortDir = -scannerSortDir;
+    } else {
+      scannerSortCol = col;
+      scannerSortDir = col === 'symbol' || col === 'sector' ? 1 : -1;
+    }
+    renderScannerTable();
+  }
+
+  function renderScannerTable() {
     const wrap = document.getElementById('scanner-table-wrap');
-    if (!scannerData || !scannerData.picks[date]) {
-      wrap.innerHTML = `<div id="scanner-loading">No scanner data for ${fmtDateDisplay(date)}</div>`;
+    if (!scannerData || !scannerDate || !scannerData.picks[scannerDate]) {
+      wrap.innerHTML = `<div id="scanner-loading">No scanner data for ${fmtDateDisplay(scannerDate)}</div>`;
       return;
     }
-    const picks = scannerData.picks[date];
+
+    let picks = [...scannerData.picks[scannerDate]];
     document.getElementById('scanner-subtitle').textContent =
       `${picks.length} stock${picks.length !== 1 ? 's' : ''} · momentum + consolidation screen`;
 
+    // Sort
+    picks.sort((a, b) => {
+      if (scannerSortCol === 'symbol' || scannerSortCol === 'sector') {
+        return scannerSortDir * (a[scannerSortCol] || '').localeCompare(b[scannerSortCol] || '');
+      }
+      return scannerSortDir * (a[scannerSortCol] - b[scannerSortCol]);
+    });
+
+    function thClass(col) {
+      if (scannerSortCol !== col) return '';
+      return scannerSortDir === 1 ? 'sorted-asc' : 'sorted-desc';
+    }
+
     let html = `<table><thead><tr>
-      <th>#</th><th>Symbol</th><th>Market Cap (Cr)</th><th>Sector</th>
+      <th>#</th>
+      <th class="${thClass('symbol')}" onclick="onScannerSort('symbol')" style="cursor:pointer">Symbol<span class="sort-arrow"></span></th>
+      <th class="${thClass('mcap')}"   onclick="onScannerSort('mcap')"   style="cursor:pointer">Market Cap (Cr)<span class="sort-arrow"></span></th>
+      <th class="${thClass('sector')}" onclick="onScannerSort('sector')" style="cursor:pointer">Sector<span class="sort-arrow"></span></th>
     </tr></thead><tbody>`;
+
     picks.forEach((r, i) => {
       html += `<tr>
         <td>${i + 1}</td>
