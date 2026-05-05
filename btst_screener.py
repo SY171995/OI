@@ -1,10 +1,13 @@
 """
 btst_screener.py
 
-BTST (Buy Today Sell Tomorrow) screener for NSE F&O stock futures.
+BTST (Buy Today Sell Tomorrow) / STBT (Sell Today Buy Tomorrow) screener for NSE F&O stock futures.
 
 Composite score = 0.4 × price_rank + 0.4 × volume_rank + 0.2 × OI_rank
 Only M1 (current month) stock futures are considered.
+
+Long build-up (BTST): price up + volume + OI increase
+Short build-up (STBT): price down + volume + OI increase  → price rank is inverted
 
 Usage:
   python3 btst_screener.py                  # latest file in bhavcopy_data/
@@ -13,7 +16,8 @@ Usage:
   python3 btst_screener.py --top 10         # change N picks (default 5)
   python3 btst_screener.py --build-json     # merge btst_picks/ CSVs → BTST_PICKS_ALL.json
 
-Output: btst_picks/BTST_PICKS_{YYYYMMDD}.csv  (per day)
+Output: btst_picks/BTST_PICKS_{YYYYMMDD}.csv  (long, per day)
+        btst_picks/STBT_PICKS_{YYYYMMDD}.csv  (short, per day)
         BTST_PICKS_ALL.json                    (--build-json, for Vercel)
 """
 
@@ -46,7 +50,7 @@ def get_file_for_date(date_str):
     return files[0] if files else None
 
 
-def compute_btst(filepath, top_n=TOP_N):
+def compute_btst(filepath, top_n=TOP_N, side='long'):
     df = pd.read_csv(filepath, low_memory=False)
 
     # Filter stock futures only
@@ -59,6 +63,9 @@ def compute_btst(filepath, top_n=TOP_N):
     stf = stf.sort_values(['TckrSymb', 'XpryDt'])
     stf['rank'] = stf.groupby('TckrSymb').cumcount() + 1
 
+    # Combined OI change across all expiries (M1+M2+M3) per symbol
+    combined_oi = stf.groupby('TckrSymb')['ChngInOpnIntrst'].sum().rename('combined_oi_change')
+
     # Keep M1 only
     m1 = stf[stf['rank'] == 1].copy()
 
@@ -67,20 +74,37 @@ def compute_btst(filepath, top_n=TOP_N):
     if m1.empty:
         return pd.DataFrame()
 
+    # Merge combined OI back into M1
+    m1 = m1.join(combined_oi, on='TckrSymb')
+
     # --- Raw metrics ---
     m1['price_chg_pct'] = ((m1['ClsPric'] - m1['PrvsClsgPric']) / m1['PrvsClsgPric'] * 100).round(2)
     m1['turnover']      = m1['TtlTrfVal']
-    m1['oi_change']     = m1['ChngInOpnIntrst']
+    m1['oi_change']     = m1['combined_oi_change']
 
     # Futures premium over spot
     m1['futures_premium_pct'] = ((m1['ClsPric'] - m1['UndrlygPric']) / m1['UndrlygPric'] * 100).round(2)
 
-    # OI change %
-    prev_oi = m1['OpnIntrst'] - m1['ChngInOpnIntrst']
-    m1['oi_change_pct'] = (m1['ChngInOpnIntrst'] / prev_oi.replace(0, float('nan')) * 100).round(2)
+    # Combined OI change % (combined change / combined prev OI across all expiries)
+    combined_prev_oi = stf.groupby('TckrSymb').apply(
+        lambda g: (g['OpnIntrst'] - g['ChngInOpnIntrst']).sum()
+    ).rename('combined_prev_oi')
+    m1 = m1.join(combined_prev_oi, on='TckrSymb')
+    m1['oi_change_pct'] = (m1['combined_oi_change'] / m1['combined_prev_oi'].replace(0, float('nan')) * 100).round(2)
+
+    # For short build-up: only consider stocks where price actually fell
+    if side == 'short':
+        m1 = m1[m1['price_chg_pct'] < 0].copy()
+        if m1.empty:
+            return pd.DataFrame()
 
     # --- Percentile ranks (0–100) ---
-    m1['price_rank'] = m1['price_chg_pct'].rank(pct=True) * 100
+    # Long: highest price change = highest rank
+    # Short: most negative price change = highest rank (invert)
+    if side == 'short':
+        m1['price_rank'] = (-m1['price_chg_pct']).rank(pct=True) * 100
+    else:
+        m1['price_rank'] = m1['price_chg_pct'].rank(pct=True) * 100
     m1['vol_rank']   = m1['turnover'].rank(pct=True) * 100
     m1['oi_rank']    = m1['oi_change'].rank(pct=True) * 100
 
@@ -93,7 +117,7 @@ def compute_btst(filepath, top_n=TOP_N):
 
     # Select output columns
     out = top[['TckrSymb', 'score', 'price_chg_pct', 'ClsPric', 'UndrlygPric',
-               'futures_premium_pct', 'TtlTrfVal', 'ChngInOpnIntrst',
+               'futures_premium_pct', 'TtlTrfVal', 'combined_oi_change',
                'oi_change_pct', 'XpryDt', 'TradDt']].copy()
 
     out['TtlTrfVal'] = (out['TtlTrfVal'] / 1e7).round(2)   # convert to Crores
@@ -103,9 +127,10 @@ def compute_btst(filepath, top_n=TOP_N):
     return out
 
 
-def print_table(df, date_str):
+def print_table(df, date_str, side='long'):
+    label = 'BTST PICKS  [LONG BUILD-UP]' if side == 'long' else 'STBT PICKS  [SHORT BUILD-UP]'
     print(f"\n{'='*70}")
-    print(f"  BTST PICKS — {date_str}  (Top {len(df)})")
+    print(f"  {label} — {date_str}  (Top {len(df)})")
     print(f"{'='*70}")
     print(f"  {'#':<3} {'Symbol':<14} {'Score':>6} {'Chg%':>7} {'Close':>8} "
           f"{'Fut Prem%':>10} {'Turnover(Cr)':>13} {'OI Chg%':>8}  Expiry")
@@ -118,53 +143,76 @@ def print_table(df, date_str):
     print()
 
 
+def _prefix_for_side(side):
+    return 'BTST' if side == 'long' else 'STBT'
+
+
 def process_file(filepath, top_n, quiet=False):
     date_str = extract_date(filepath)
     if not date_str:
         print(f"Could not extract date from {filepath}")
         return
 
-    out = compute_btst(filepath, top_n)
-    if out.empty:
-        print(f"[{date_str}] No valid data found.")
-        return
-
     os.makedirs(OUT_DIR, exist_ok=True)
-    csv_path = os.path.join(OUT_DIR, f'BTST_PICKS_{date_str}.csv')
-    out.to_csv(csv_path, index_label='rank')
 
-    if not quiet:
-        print_table(out, date_str)
-        print(f"Saved → {csv_path}")
-    else:
-        print(f"[{date_str}] ✓  {len(out)} picks → {csv_path}")
+    for side in ('long', 'short'):
+        out = compute_btst(filepath, top_n, side=side)
+        prefix = _prefix_for_side(side)
+        csv_path = os.path.join(OUT_DIR, f'{prefix}_PICKS_{date_str}.csv')
+
+        if out.empty:
+            if not quiet:
+                print(f"[{date_str}] No valid {side} build-up data found.")
+            continue
+
+        out.to_csv(csv_path, index_label='rank')
+
+        if not quiet:
+            print_table(out, date_str, side=side)
+            print(f"Saved → {csv_path}")
+        else:
+            print(f"[{date_str}] ✓  {prefix} {len(out)} picks → {csv_path}")
 
 
 def build_json(out_path='BTST_PICKS_ALL.json'):
     """Merge all btst_picks/ CSVs into a single JSON for Vercel static serving."""
-    files = sorted(glob.glob(os.path.join(OUT_DIR, 'BTST_PICKS_*.csv')), reverse=True)
-    if not files:
+    long_files  = sorted(glob.glob(os.path.join(OUT_DIR, 'BTST_PICKS_*.csv')), reverse=True)
+    short_files = sorted(glob.glob(os.path.join(OUT_DIR, 'STBT_PICKS_*.csv')), reverse=True)
+
+    if not long_files and not short_files:
         print(f"No files found in {OUT_DIR}/  — run --all first.")
         sys.exit(1)
 
     dates = []
     picks = {}
-    for f in files:
+    short_picks = {}
+
+    for f in long_files:
         m = re.search(r'BTST_PICKS_(\d{8})\.csv', os.path.basename(f))
         if not m:
             continue
         date = m.group(1)
-        dates.append(date)
+        if date not in dates:
+            dates.append(date)
         df = pd.read_csv(f)
-        # Convert NaN to None for clean JSON
-        records = df.where(pd.notnull(df), None).to_dict(orient='records')
-        picks[date] = records
+        picks[date] = df.where(pd.notnull(df), None).to_dict(orient='records')
 
-    payload = {'dates': dates, 'picks': picks}
+    for f in short_files:
+        m = re.search(r'STBT_PICKS_(\d{8})\.csv', os.path.basename(f))
+        if not m:
+            continue
+        date = m.group(1)
+        if date not in dates:
+            dates.append(date)
+        df = pd.read_csv(f)
+        short_picks[date] = df.where(pd.notnull(df), None).to_dict(orient='records')
+
+    dates.sort(reverse=True)
+    payload = {'dates': dates, 'picks': picks, 'short_picks': short_picks}
     with open(out_path, 'w') as fh:
         json.dump(payload, fh, separators=(',', ':'))
 
-    print(f"✅ {out_path} written — {len(dates)} dates")
+    print(f"✅ {out_path} written — {len(dates)} dates ({len(picks)} long, {len(short_picks)} short)")
 
 
 def main():

@@ -13,11 +13,15 @@ Usage:
 
 import os
 import sys
+import glob
+import re
 import subprocess
-from flask import Flask, send_file, Response, stream_with_context
+import pandas as pd
+from flask import Flask, send_file, Response, stream_with_context, jsonify
 
 app = Flask(__name__)
 BASE = os.path.dirname(os.path.abspath(__file__))
+BTST_DIR = os.path.join(BASE, 'btst_picks')
 
 
 @app.route('/')
@@ -36,6 +40,7 @@ def refresh():
     steps = [
         ([sys.executable, 'download_bhavcopy_bulk.py', '--days', '7'], '=== Step 1: Downloading last 7 days of BhavCopy data ==='),
         ([sys.executable, 'build_futures_premium_db.py'], '=== Step 2: Building FUTURES_PREMIUM_DB.csv ==='),
+        ([sys.executable, 'btst_screener.py', '--all'], '=== Step 3: Building BTST picks ==='),
     ]
 
     def generate():
@@ -68,6 +73,26 @@ def refresh():
             'X-Accel-Buffering': 'no',
         }
     )
+
+
+@app.route('/api/btst/dates')
+def btst_dates():
+    files = sorted(glob.glob(os.path.join(BTST_DIR, 'BTST_PICKS_*.csv')), reverse=True)
+    dates = []
+    for f in files:
+        m = re.search(r'BTST_PICKS_(\d{8})\.csv', os.path.basename(f))
+        if m:
+            dates.append(m.group(1))
+    return jsonify(dates)
+
+
+@app.route('/api/btst/<date>')
+def btst_for_date(date):
+    csv_path = os.path.join(BTST_DIR, f'BTST_PICKS_{date}.csv')
+    if not os.path.exists(csv_path):
+        return jsonify({'error': f'No BTST picks for date {date}'}), 404
+    df = pd.read_csv(csv_path)
+    return jsonify(df.to_dict(orient='records'))
 
 
 if __name__ == '__main__':
