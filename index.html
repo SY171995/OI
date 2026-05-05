@@ -361,6 +361,64 @@
 
     #btst-panel.active { display: block; }
 
+    /* Scanner panel */
+    #scanner-panel {
+      display: none;
+      padding: 20px 24px;
+    }
+
+    #scanner-panel.active { display: block; }
+
+    #scanner-table-wrap table {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 0.82rem;
+    }
+
+    #scanner-table-wrap th {
+      background: #1a1d2e;
+      color: #aaa;
+      font-weight: 500;
+      padding: 9px 12px;
+      text-align: left;
+      border-bottom: 2px solid #2d3148;
+      white-space: nowrap;
+    }
+
+    #scanner-table-wrap th:nth-child(3) { text-align: right; }
+
+    #scanner-table-wrap td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid #1e2038;
+      color: #d0d0d0;
+    }
+
+    #scanner-table-wrap td:first-child {
+      color: #555;
+      font-size: 0.75rem;
+      width: 36px;
+    }
+
+    #scanner-table-wrap td:nth-child(2) {
+      font-weight: 700;
+      color: #e8eaff;
+      font-size: 0.88rem;
+    }
+
+    #scanner-table-wrap td:nth-child(3) { text-align: right; color: #b0b8ff; }
+
+    #scanner-table-wrap td:nth-child(4) { color: #888; font-size: 0.78rem; }
+
+    #scanner-table-wrap tr:hover td { background: #1e2240; }
+
+    #scanner-loading {
+      padding: 40px;
+      text-align: center;
+      color: #555;
+      font-size: 0.85rem;
+    }
+
     .btst-controls {
       display: flex;
       align-items: center;
@@ -504,6 +562,7 @@
   <div class="tab-nav">
     <button class="tab-btn active" id="tab-premium" onclick="switchTab('premium')">Futures Premium</button>
     <button class="tab-btn" id="tab-btst" onclick="switchTab('btst')">BTST / STBT Picks</button>
+    <button class="tab-btn" id="tab-scanner" onclick="switchTab('scanner')">Scanner</button>
   </div>
   <button id="refresh-btn" onclick="doRefresh()">&#x21BB; Refresh</button>
 </header>
@@ -573,6 +632,18 @@
   </div>
   <div id="btst-table-wrap">
     <div id="btst-loading">Select a date to load picks</div>
+  </div>
+</div>
+
+<!-- Scanner panel -->
+<div id="scanner-panel">
+  <div class="btst-controls">
+    <label>Date</label>
+    <select id="scanner-date-select" onchange="loadScannerDate(this.value)"></select>
+    <span class="btst-subtitle" id="scanner-subtitle"></span>
+  </div>
+  <div id="scanner-table-wrap">
+    <div id="scanner-loading">Select a date to load scanner picks</div>
   </div>
 </div>
 
@@ -815,14 +886,19 @@
 
   // ── Tab switching ──────────────────────────────────────────────────────────
   function switchTab(tab) {
-    document.getElementById('tab-premium').classList.toggle('active', tab === 'premium');
-    document.getElementById('tab-btst').classList.toggle('active', tab === 'btst');
+    ['premium', 'btst', 'scanner'].forEach(t => {
+      document.getElementById('tab-' + t).classList.toggle('active', t === tab);
+    });
     document.getElementById('premium-panel').style.display = tab === 'premium' ? '' : 'none';
     document.getElementById('btst-panel').classList.toggle('active', tab === 'btst');
+    document.getElementById('scanner-panel').classList.toggle('active', tab === 'scanner');
     document.querySelector('.controls').style.display = tab === 'premium' ? '' : 'none';
 
     if (tab === 'btst' && document.getElementById('btst-date-select').options.length === 0) {
       loadBtstDates();
+    }
+    if (tab === 'scanner' && document.getElementById('scanner-date-select').options.length === 0) {
+      loadScannerDates();
     }
   }
 
@@ -923,6 +999,55 @@
       </tr>`;
     });
 
+    html += '</tbody></table>';
+    wrap.innerHTML = html;
+  }
+
+  // ── Scanner ────────────────────────────────────────────────────────────────
+  let scannerData = null;
+
+  async function loadScannerDates() {
+    document.getElementById('scanner-loading').textContent = 'Loading...';
+    try {
+      const resp = await fetch('SCANNER_PICKS_ALL.json?t=' + Date.now());
+      if (!resp.ok) throw new Error('SCANNER_PICKS_ALL.json not found');
+      scannerData = await resp.json();
+      const dates = scannerData.dates || [];
+      const sel = document.getElementById('scanner-date-select');
+      sel.innerHTML = '';
+      dates.forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = d;
+        opt.textContent = fmtDateDisplay(d);
+        sel.appendChild(opt);
+      });
+      if (dates.length > 0) loadScannerDate(dates[0]);
+    } catch (e) {
+      document.getElementById('scanner-loading').textContent = 'Failed to load scanner data: ' + e.message;
+    }
+  }
+
+  function loadScannerDate(date) {
+    const wrap = document.getElementById('scanner-table-wrap');
+    if (!scannerData || !scannerData.picks[date]) {
+      wrap.innerHTML = `<div id="scanner-loading">No scanner data for ${fmtDateDisplay(date)}</div>`;
+      return;
+    }
+    const picks = scannerData.picks[date];
+    document.getElementById('scanner-subtitle').textContent =
+      `${picks.length} stock${picks.length !== 1 ? 's' : ''} · momentum + consolidation screen`;
+
+    let html = `<table><thead><tr>
+      <th>#</th><th>Symbol</th><th>Market Cap (Cr)</th><th>Sector</th>
+    </tr></thead><tbody>`;
+    picks.forEach((r, i) => {
+      html += `<tr>
+        <td>${i + 1}</td>
+        <td>${r.symbol}</td>
+        <td>${r.mcap.toLocaleString('en-IN')}</td>
+        <td>${r.sector || '—'}</td>
+      </tr>`;
+    });
     html += '</tbody></table>';
     wrap.innerHTML = html;
   }
