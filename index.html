@@ -446,6 +446,46 @@
       font-weight: 600;
     }
 
+    .stbt-score {
+      display: inline-block;
+      background: rgba(224, 90, 90, 0.15);
+      color: #f08080;
+      border-radius: 3px;
+      padding: 2px 7px;
+      font-weight: 600;
+    }
+
+    .btst-side-tabs {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 16px;
+    }
+
+    .btst-side-btn {
+      background: transparent;
+      border: 1px solid #3d4165;
+      color: #666;
+      padding: 6px 16px;
+      border-radius: 4px;
+      font-size: 0.82rem;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s, background 0.15s;
+    }
+
+    .btst-side-btn:hover { color: #ccc; border-color: #5a5a80; }
+
+    .btst-side-btn.active-long {
+      border-color: #5a6aff;
+      color: #a0aaff;
+      background: rgba(90, 106, 255, 0.1);
+    }
+
+    .btst-side-btn.active-short {
+      border-color: #e05a5a;
+      color: #f08080;
+      background: rgba(224, 90, 90, 0.1);
+    }
+
     #btst-loading {
       padding: 40px;
       text-align: center;
@@ -463,7 +503,7 @@
   </div>
   <div class="tab-nav">
     <button class="tab-btn active" id="tab-premium" onclick="switchTab('premium')">Futures Premium</button>
-    <button class="tab-btn" id="tab-btst" onclick="switchTab('btst')">BTST Picks</button>
+    <button class="tab-btn" id="tab-btst" onclick="switchTab('btst')">BTST / STBT Picks</button>
   </div>
   <button id="refresh-btn" onclick="doRefresh()">&#x21BB; Refresh</button>
 </header>
@@ -520,15 +560,19 @@
   </div>
 </div>
 
-<!-- BTST panel -->
+<!-- BTST / STBT panel -->
 <div id="btst-panel">
+  <div class="btst-side-tabs">
+    <button class="btst-side-btn active-long" id="btst-side-long" onclick="switchBtstSide('long')">&#x1F4C8; Long Build-Up (BTST)</button>
+    <button class="btst-side-btn" id="btst-side-short" onclick="switchBtstSide('short')">&#x1F4C9; Short Build-Up (STBT)</button>
+  </div>
   <div class="btst-controls">
     <label>Date</label>
     <select id="btst-date-select" onchange="loadBtstDate(this.value)"></select>
     <span class="btst-subtitle" id="btst-subtitle"></span>
   </div>
   <div id="btst-table-wrap">
-    <div id="btst-loading">Select a date to load BTST picks</div>
+    <div id="btst-loading">Select a date to load picks</div>
   </div>
 </div>
 
@@ -782,14 +826,25 @@
     }
   }
 
-  // ── BTST ───────────────────────────────────────────────────────────────────
+  // ── BTST / STBT ────────────────────────────────────────────────────────────
   let btstData = null;  // cache for BTST_PICKS_ALL.json
+  let btstSide = 'long';  // 'long' or 'short'
 
   function fmtDateDisplay(d) {
     // YYYYMMDD → DD-MMM-YYYY
     const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const y = d.slice(0,4), mo = parseInt(d.slice(4,6))-1, day = d.slice(6,8);
     return `${day}-${months[mo]}-${y}`;
+  }
+
+  function switchBtstSide(side) {
+    btstSide = side;
+    const longBtn  = document.getElementById('btst-side-long');
+    const shortBtn = document.getElementById('btst-side-short');
+    longBtn.className  = 'btst-side-btn' + (side === 'long'  ? ' active-long'  : '');
+    shortBtn.className = 'btst-side-btn' + (side === 'short' ? ' active-short' : '');
+    const date = document.getElementById('btst-date-select').value;
+    if (date) loadBtstDate(date);
   }
 
   async function loadBtstDates() {
@@ -809,17 +864,18 @@
       });
       if (dates.length > 0) loadBtstDate(dates[0]);
     } catch (e) {
-      document.getElementById('btst-loading').textContent = 'Failed to load BTST data: ' + e.message;
+      document.getElementById('btst-loading').textContent = 'Failed to load picks data: ' + e.message;
     }
   }
 
   function loadBtstDate(date) {
     const wrap = document.getElementById('btst-table-wrap');
-    if (!btstData || !btstData.picks[date]) {
-      wrap.innerHTML = `<div id="btst-loading">No data for ${date}</div>`;
+    const dataKey = btstSide === 'long' ? 'picks' : 'short_picks';
+    if (!btstData || !btstData[dataKey] || !btstData[dataKey][date]) {
+      wrap.innerHTML = `<div id="btst-loading">No ${btstSide === 'long' ? 'BTST' : 'STBT'} data for ${fmtDateDisplay(date)}</div>`;
       return;
     }
-    renderBtstTable(btstData.picks[date], date);
+    renderBtstTable(btstData[dataKey][date], date);
   }
 
   function colorVal(v, decimals=2) {
@@ -832,8 +888,11 @@
 
   function renderBtstTable(picks, date) {
     const wrap = document.getElementById('btst-table-wrap');
+    const isShort = btstSide === 'short';
+    const scoreClass = isShort ? 'stbt-score' : 'btst-score';
+    const label = isShort ? 'STBT' : 'BTST';
     document.getElementById('btst-subtitle').textContent =
-      `${picks.length} picks · Score = 40% price + 40% volume + 20% OI`;
+      `${label} · ${picks.length} picks · Score = 40% price + 40% volume + 20% OI`;
 
     let html = `<table>
       <thead><tr>
@@ -853,7 +912,7 @@
       html += `<tr>
         <td>${r.rank}</td>
         <td>${r.TckrSymb}</td>
-        <td><span class="btst-score">${parseFloat(r.score).toFixed(1)}</span></td>
+        <td><span class="${scoreClass}">${parseFloat(r.score).toFixed(1)}</span></td>
         <td>${colorVal(r.price_chg_pct)}</td>
         <td style="color:#b0b8ff">${parseFloat(r.ClsPric).toFixed(2)}</td>
         <td style="color:#888">${parseFloat(r.UndrlygPric).toFixed(2)}</td>
