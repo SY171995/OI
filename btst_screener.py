@@ -194,8 +194,7 @@ def build_json(out_path='BTST_PICKS_ALL.json'):
         date = m.group(1)
         if date not in dates:
             dates.append(date)
-        df = pd.read_csv(f)
-        picks[date] = df.where(pd.notnull(df), None).to_dict(orient='records')
+        picks[date] = json.loads(pd.read_csv(f).to_json(orient='records'))
 
     for f in short_files:
         m = re.search(r'STBT_PICKS_(\d{8})\.csv', os.path.basename(f))
@@ -204,8 +203,7 @@ def build_json(out_path='BTST_PICKS_ALL.json'):
         date = m.group(1)
         if date not in dates:
             dates.append(date)
-        df = pd.read_csv(f)
-        short_picks[date] = df.where(pd.notnull(df), None).to_dict(orient='records')
+        short_picks[date] = json.loads(pd.read_csv(f).to_json(orient='records'))
 
     dates.sort(reverse=True)
     payload = {'dates': dates, 'picks': picks, 'short_picks': short_picks}
